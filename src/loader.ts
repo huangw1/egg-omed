@@ -56,6 +56,17 @@ export class Loader {
     })
   }
 
+  loadPlugin() {
+    const mod = require(path.join(__dirname, 'config', 'plugin.js'));
+
+    Object.entries(mod).forEach(([_, p]) => {
+      if ((<any>p).enabled) {
+        const plugin = require((<any>p).packagePath).default;
+        plugin(this.app)
+      }
+    })
+  }
+
   loadConfig() {
     const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev';
     const envConfig = path.join(__dirname, 'config', `config.${env}.js`);
