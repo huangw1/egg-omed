@@ -6,14 +6,15 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as Router from 'koa-router'
-import { BaseContext } from 'koa'
 import * as Koa from 'koa'
+import { BaseContext } from 'koa';
+import { bp } from './blueprint'
 
 const cache = Symbol.for('cache');
 
 export class Loader {
   app: Koa;
-  route: Router = new Router();
+  router: Router = new Router();
   controller: any = {};
 
   constructor(app: Koa) {
@@ -24,25 +25,7 @@ export class Loader {
     const dirs = fs.readdirSync(path.join(__dirname, 'controller'));
 
     dirs.forEach(filename => {
-      const property = path.parse(filename).name;
-      const mod = require(path.join(__dirname, 'controller', filename)).default;
-
-      if (mod) {
-        const methods = Object.getOwnPropertyNames(mod.prototype).filter(method => method !== 'constructor');
-        Object.defineProperty(this.controller, property, {
-          get(): any {
-            const proxy: { [key: string]: any } = {};
-            methods.forEach(method => {
-              proxy[method] = {
-                type: mod,
-                method
-              }
-            });
-
-            return proxy
-          }
-        })
-      }
+      require(path.join(__dirname, 'controller', filename)).default
     });
 
     return this.controller
@@ -91,21 +74,19 @@ export class Loader {
     this.loadService();
     this.loadController();
 
-    const mod = require(path.join(__dirname, 'router.js')).default;
-    const routers = mod(this.controller);
-
-    Object.entries(routers).forEach(([key, handler]) => {
-      const [method, path] = key.split(' ');
-      (<any>this.route)[method](path, async (ctx: BaseContext) => {
-        const { type, method } = <any>handler;
-        /**
-         * 独立的请求，需要新的ctx，不能复用
-         */
-        const instance = new type(ctx);
-        instance[method]()
-      })
+    Object.entries(bp.getRoutes()).forEach(([url, r]) => {
+      r.forEach(route => {
+        const { httpMethod, constructor, handler } = <any>route;
+        (<any>this.router)[httpMethod](url, async (ctx: BaseContext) => {
+          /**
+           * 独立的请求，需要新的ctx，不能复用
+           */
+          const instance = new constructor(ctx, this.app);
+          instance[handler]()
+        })
+      });
     });
 
-    return this.route.routes()
+    return this.router.routes()
   }
 }
