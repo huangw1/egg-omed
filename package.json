@@ -1,0 +1,28 @@
+{
+  "name": "egg-omed",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "@types/koa": "^2.11.3",
+    "@types/koa-router": "^7.4.0",
+    "koa": "^2.11.0",
+    "koa-router": "^8.0.8",
+    "nodemon": "^2.0.3"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "start": "tsc && NODE_ENV=development node ./dist/app.js",
+    "dev": "./node_modules/nodemon/bin/nodemon.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huangw1/egg-omed.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/huangw1/egg-omed/issues"
+  },
+  "homepage": "https://github.com/huangw1/egg-omed#readme"
+}
