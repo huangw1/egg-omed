@@ -6,58 +6,77 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as Router from 'koa-router'
-import * as Koa from 'koa'
 import { BaseContext } from 'koa';
 import { bp } from './blueprint'
+import { EggOmed } from './core';
 
 const cache = Symbol.for('cache');
 
+interface FileModule {
+  module: any,
+  filename: string
+}
+
 export class Loader {
-  app: Koa;
+  app: EggOmed;
   router: Router = new Router();
   controller: any = {};
 
-  constructor(app: Koa) {
+  constructor(app: EggOmed) {
     this.app = app;
   }
 
+  static get appDir() {
+    return path.join(__dirname, 'app')
+  }
+
+  fileLoader(url: string): Array<FileModule> {
+    if (fs.existsSync(path.join(Loader.appDir, url))) {
+      const dirs = fs.readdirSync(path.join(Loader.appDir, url));
+      return dirs.map(filename => {
+        return {
+          module: require(path.join(__dirname, url, filename)).default,
+          filename
+        }
+      })
+    } else {
+      return []
+    }
+  }
+
   loadController() {
-    const dirs = fs.readdirSync(path.join(__dirname, 'controller'));
-
-    dirs.forEach(filename => {
-      require(path.join(__dirname, 'controller', filename)).default
-    });
-
-    return this.controller
+    this.fileLoader('controller');
   }
 
   loadService() {
-    const dirs = fs.readdirSync(path.join(__dirname, 'service'));
+    const services = this.fileLoader('service');
+    this.loadToContext(services, 'service');
+  }
 
-    Object.defineProperty(this.app.context, 'service', {
+  loadToContext(fileModules: Array<FileModule>, property: string) {
+    Object.defineProperty(this.app.context, property, {
       get(): any {
         if (!this[cache]) {
           this[cache] = {}
         }
-        if (!this[cache].service) {
-          this[cache].service = {};
+        if (!this[cache][property]) {
+          this[cache][property] = {};
 
-          dirs.forEach(filename => {
-            const property = path.parse(filename).name;
-            const mod = require(path.join(__dirname, 'service', filename)).default;
-            if (mod) {
-              this[cache].service[property] = new mod(this, this.app);
+          fileModules.forEach(fileModule => {
+            const key = path.parse(fileModule.filename).name;
+            if (fileModule.module) {
+              this[cache][property][key] = new fileModule.module(this, this.app);
             }
           })
         }
 
-        return this[cache].service
+        return this[cache][property]
       }
     })
   }
 
   loadPlugin() {
-    const mod = require(path.join(__dirname, 'config', 'plugin.js'));
+    const mod = require(path.join(Loader.appDir, 'config', 'plugin.js'));
 
     Object.entries(mod).forEach(([_, p]) => {
       if ((<any>p).enabled) {
@@ -67,10 +86,25 @@ export class Loader {
     })
   }
 
+  loadMiddleware() {
+    const middleware = this.fileLoader('middleware');
+    const registerMiddleware = (<any>this.app).config.middleware as Array<string>;
+    if (registerMiddleware) {
+      registerMiddleware.forEach(name => {
+        middleware.forEach(mid => {
+          if (name === mid.filename) {
+            const key = path.parse(mid.filename).name;
+            this.app.use(mid.module((<any>this.app).config[key], this.app));
+          }
+        })
+      })
+    }
+  }
+
   loadConfig() {
     const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev';
-    const envConfig = path.join(__dirname, 'config', `config.${env}.js`);
-    const defaultConfig = path.join(__dirname, 'config', 'config.default.js');
+    const envConfig = path.join(Loader.appDir, 'config', `config.${env}.js`);
+    const defaultConfig = path.join(Loader.appDir, 'config', 'config.default.js');
     const proxy = Object.assign({}, require(defaultConfig).default, require(envConfig).default);
 
     Object.defineProperty(this.app, 'config', {
@@ -81,10 +115,6 @@ export class Loader {
   }
 
   loadRouter() {
-    this.loadConfig();
-    this.loadService();
-    this.loadController();
-
     Object.entries(bp.getRoutes()).forEach(([url, r]) => {
       r.forEach(route => {
         const { httpMethod, constructor, handler } = <any>route;
@@ -98,6 +128,15 @@ export class Loader {
       });
     });
 
-    return this.router.routes()
+    this.app.use(this.router.routes())
+  }
+
+  load() {
+    this.loadConfig();
+    this.loadPlugin();
+    this.loadController();
+    this.loadService();
+    this.loadMiddleware();
+    this.loadRouter();
   }
 }

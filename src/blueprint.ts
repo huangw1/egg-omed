@@ -13,6 +13,19 @@ interface Bps {
   [key: string]: Array<Bp>
 }
 
+const methods = ['get', 'post', 'put', 'del'];
+
+interface Decorate {
+  (target: any, key: string): void
+}
+
+export interface BluePrint extends Blueprint {
+  get(url: string): Decorate;
+  post(url: string): Decorate;
+  put(url: string): Decorate;
+  del(url: string): Decorate
+}
+
 class Blueprint {
   routes: Bps = {};
 
@@ -45,5 +58,21 @@ class Blueprint {
     return this.routes;
   }
 }
+
+methods.forEach(httpMethod => {
+  Object.defineProperty(Blueprint.prototype, httpMethod, {
+    get(): any {
+      return (url: string) => {
+        return (target: any, key: string) => {
+          this.addRoute(url, {
+            httpMethod,
+            constructor: target.constructor,
+            handler: key
+          })
+        }
+      }
+    }
+  })
+});
 
 export const bp = new Blueprint();
